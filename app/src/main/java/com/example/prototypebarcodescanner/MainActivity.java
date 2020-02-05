@@ -5,6 +5,9 @@ import android.os.Bundle;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.core.CameraX;
+import androidx.camera.core.ImageAnalysis;
+import androidx.camera.core.ImageAnalysisConfig;
+import androidx.camera.core.ImageProxy;
 import androidx.camera.core.Preview;
 import androidx.camera.core.PreviewConfig;
 
@@ -13,6 +16,13 @@ import android.view.TextureView;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
+
+import com.google.firebase.ml.vision.barcode.FirebaseVisionBarcode;
+import com.google.firebase.ml.vision.barcode.FirebaseVisionBarcodeDetectorOptions;
+
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * This is a sample application to showcase the usage of mlkits barcode scanner.
@@ -25,8 +35,9 @@ import android.widget.TextView;
 public class MainActivity extends AppCompatActivity {
     private Button button;
     private TextureView textureView;
-    private TextView textView;
+    public TextView textView;
     private Boolean isCameraSet = false;
+    private BarcodeAnalyzer barcodeAnalyzer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -40,6 +51,7 @@ public class MainActivity extends AppCompatActivity {
         button = findViewById(R.id.button);
 
         setupCamerax();
+        barcodeAnalyzer = new BarcodeAnalyzer(textView);
 
         button.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -58,11 +70,10 @@ public class MainActivity extends AppCompatActivity {
         isCameraSet = true;
         CameraX.unbindAll();
 
-        //Create preview use-case
-        Size textureViewResolution = new Size(textureView.getWidth(), textureView.getHeight());
-        PreviewConfig previewConfig = new PreviewConfig.Builder()
-                .build();
-        Preview preview = new Preview(previewConfig);
+        //Create preview use-case using default builder
+        Preview preview = new Preview(
+                new PreviewConfig.Builder().build()
+        );
 
         preview.setOnPreviewOutputUpdateListener(new Preview.OnPreviewOutputUpdateListener() {
             @Override
@@ -71,11 +82,27 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        CameraX.bindToLifecycle(this, preview);
+        //Create ImageAnalyzer use-case
+        //Read mode set to acquire last image to avoid frame stutter
+        ImageAnalysisConfig imageAnalysisConfig = new ImageAnalysisConfig.Builder()
+                .setImageReaderMode(ImageAnalysis.ImageReaderMode.ACQUIRE_LATEST_IMAGE)
+                .build();
+        ImageAnalysis imageAnalyzer = new ImageAnalysis(imageAnalysisConfig);
+
+        //Analyze runs in another thread, calls the barcode scanner
+        ExecutorService executor = Executors.newFixedThreadPool(1);
+        imageAnalyzer.setAnalyzer(executor, new ImageAnalysis.Analyzer() {
+                    @Override
+                    public void analyze(ImageProxy image, int rotationDegrees) {
+                        barcodeAnalyzer.analyze(image, rotationDegrees);
+                    }
+                });
+        CameraX.bindToLifecycle(this, preview, imageAnalyzer);
 
         /*
         //TODO: Implement for debugging
         previewBuilder.setTargetName();
         */
     }
+
 }
